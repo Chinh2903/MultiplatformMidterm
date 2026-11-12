@@ -14,19 +14,42 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { LecturerAnalyticsPanel } from '@/components/lecturer-analytics-panel';
 import { LecturerAvatar } from '@/components/lecturer-avatar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { deleteLecturer, useLecturers } from '@/hooks/use-lecturers';
 import { useTheme } from '@/hooks/use-theme';
+import {
+  computeLecturerStats,
+  defaultOrderForSortKey,
+  filterAndSortLecturers,
+  type ImageFilter,
+  type SortKey,
+  type SortOrder,
+} from '@/lib/giangvien-analytics';
 import type { GiangVien } from '@/types/giangvien';
 
-type SortKey = 'fullname' | 'sumclass';
-
 function ErrorText({ message }: { message: string }) {
-  return <ThemedText type="small" style={styles.errorText}>{message}</ThemedText>;
+  return (
+    <ThemedText type="small" style={styles.errorText}>
+      {message}
+    </ThemedText>
+  );
 }
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'idgv', label: 'Mã GV' },
+  { key: 'fullname', label: 'Họ tên' },
+  { key: 'sumclass', label: 'Số lớp' },
+];
+
+const IMAGE_FILTER_OPTIONS: { key: ImageFilter; label: string }[] = [
+  { key: 'all', label: 'Tất cả' },
+  { key: 'with_image', label: 'Có ảnh' },
+  { key: 'without_image', label: 'Chưa có ảnh' },
+];
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -36,35 +59,47 @@ export default function DashboardScreen() {
   const isWide = width >= 768;
 
   const [search, setSearch] = useState('');
+  const [imageFilter, setImageFilter] = useState<ImageFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('fullname');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+
   const [detail, setDetail] = useState<GiangVien | null>(null);
   const [pendingDelete, setPendingDelete] = useState<GiangVien | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const matched =
-      query === ''
-        ? lecturers
-        : lecturers.filter(
-            (gv) =>
-              gv.Fullname.toLowerCase().includes(query) || gv.IDGV.toLowerCase().includes(query),
-          );
-    return [...matched].sort((a, b) =>
-      sortKey === 'fullname'
-        ? a.Fullname.localeCompare(b.Fullname, 'vi')
-        : b.SumClass - a.SumClass,
-    );
-  }, [lecturers, search, sortKey]);
+  const stats = useMemo(() => computeLecturerStats(lecturers), [lecturers]);
 
-  const stats = useMemo(
-    () => ({
-      count: lecturers.length,
-      totalClass: lecturers.reduce((sum, gv) => sum + gv.SumClass, 0),
-    }),
-    [lecturers],
+  const filtered = useMemo(
+    () =>
+      filterAndSortLecturers(lecturers, {
+        search,
+        imageFilter,
+        sortKey,
+        sortOrder,
+      }),
+    [lecturers, search, imageFilter, sortKey, sortOrder],
   );
+
+  const hasActiveFilter = search.trim() !== '' || imageFilter !== 'all';
+
+  function handleSelectSort(nextKey: SortKey) {
+    if (sortKey === nextKey) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(nextKey);
+      setSortOrder(defaultOrderForSortKey(nextKey));
+    }
+  }
+
+  function toggleSortOrder() {
+    setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+  }
+
+  function resetFilters() {
+    setSearch('');
+    setImageFilter('all');
+  }
 
   async function handleConfirmDelete() {
     if (!pendingDelete) {
@@ -88,11 +123,6 @@ export default function DashboardScreen() {
     router.push(`/form?id=${encodeURIComponent(gv.IDGV)}`);
   }
 
-  const sortOptions: { key: SortKey; label: string }[] = [
-    { key: 'fullname', label: 'Theo họ tên' },
-    { key: 'sumclass', label: 'Theo số lớp' },
-  ];
-
   return (
     <>
       <Stack.Screen options={{ title: 'Danh sách giảng viên' }} />
@@ -104,83 +134,153 @@ export default function DashboardScreen() {
               styles.content,
               isWide ? styles.contentWide : undefined,
             ]}>
-            {/* Số liệu tổng quan */}
-            <View style={styles.statsRow}>
-              <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]}>
-                <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                  Số giảng viên
-                </ThemedText>
-                <ThemedText type="subtitle" style={styles.statValue}>
-                  {stats.count}
-                </ThemedText>
-              </View>
-              <View style={[styles.statCard, { backgroundColor: theme.backgroundElement }]}>
-                <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                  Tổng số lớp
-                </ThemedText>
-                <ThemedText type="subtitle" style={styles.statValue}>
-                  {stats.totalClass}
-                </ThemedText>
-              </View>
-            </View>
+            {/* Bảng thống kê nâng cao & Biểu đồ số lớp */}
+            <LecturerAnalyticsPanel
+              lecturers={lecturers}
+              stats={stats}
+              isWide={isWide}
+              onSelectLecturer={setDetail}
+            />
 
-            {/* Thanh công cụ: tìm kiếm + sắp xếp + thêm */}
-            <View style={[styles.toolbar, isWide ? styles.toolbarWide : undefined]}>
-              <TextInput
-                style={[
-                  styles.searchInput,
-                  {
-                    backgroundColor: theme.backgroundElement,
-                    color: theme.text,
-                  },
-                ]}
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Tìm theo họ tên hoặc mã GV…"
-                placeholderTextColor={theme.textSecondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <View style={styles.sortRow}>
-                <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                  Sắp xếp:
-                </ThemedText>
-                {sortOptions.map((option) => {
-                  const active = sortKey === option.key;
-                  return (
+            {/* Thanh công cụ: Tìm kiếm + Thêm mới + Bộ lọc + Sắp xếp 2 chiều */}
+            <View
+              style={[
+                styles.filterPanel,
+                {
+                  backgroundColor: theme.backgroundElement,
+                  borderColor: theme.backgroundSelected,
+                },
+              ]}>
+              <View style={[styles.topBarRow, isWide ? styles.topBarRowWide : undefined]}>
+                <TextInput
+                  style={[
+                    styles.searchInput,
+                    {
+                      backgroundColor: theme.background,
+                      color: theme.text,
+                      borderColor: theme.backgroundSelected,
+                    },
+                  ]}
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Tìm theo họ tên hoặc mã GV…"
+                  placeholderTextColor={theme.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => router.push('/form')}
+                  style={({ pressed }) => [
+                    styles.addButton,
+                    { backgroundColor: '#208AEF', opacity: pressed ? 0.85 : 1 },
+                  ]}>
+                  <ThemedText type="smallBold" style={styles.addButtonText}>
+                    + Thêm giảng viên
+                  </ThemedText>
+                </Pressable>
+              </View>
+
+              {/* Hàng lọc ảnh + sắp xếp 2 chiều + bộ đếm kết quả */}
+              <View style={styles.sortAndResultRow}>
+                <View style={styles.chipGroupRow}>
+                  <ThemedText
+                    type="small"
+                    style={[styles.groupLabel, { color: theme.textSecondary }]}>
+                    Lọc ảnh:
+                  </ThemedText>
+                  {IMAGE_FILTER_OPTIONS.map((option) => {
+                    const active = imageFilter === option.key;
+                    return (
+                      <Pressable
+                        key={option.key}
+                        accessibilityRole="button"
+                        onPress={() => setImageFilter(option.key)}
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: active ? '#208AEF' : theme.background,
+                            borderColor: active ? '#208AEF' : theme.backgroundSelected,
+                          },
+                        ]}>
+                        <ThemedText
+                          type="small"
+                          style={{ color: active ? '#ffffff' : theme.text }}>
+                          {option.label}
+                        </ThemedText>
+                      </Pressable>
+                    );
+                  })}
+
+                  <View style={styles.dividerDot} />
+
+                  <ThemedText
+                    type="small"
+                    style={[styles.groupLabel, { color: theme.textSecondary }]}>
+                    Sắp xếp:
+                  </ThemedText>
+                  {SORT_OPTIONS.map((option) => {
+                    const active = sortKey === option.key;
+                    const arrow = active ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '';
+                    return (
+                      <Pressable
+                        key={option.key}
+                        accessibilityRole="button"
+                        onPress={() => handleSelectSort(option.key)}
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: active ? '#208AEF' : theme.background,
+                            borderColor: active ? '#208AEF' : theme.backgroundSelected,
+                          },
+                        ]}>
+                        <ThemedText
+                          type="small"
+                          style={{ color: active ? '#ffffff' : theme.text }}>
+                          {option.label}
+                          {arrow}
+                        </ThemedText>
+                      </Pressable>
+                    );
+                  })}
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={toggleSortOrder}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: theme.background,
+                        borderColor: theme.backgroundSelected,
+                      },
+                    ]}>
+                    <ThemedText type="smallBold" style={{ color: '#208AEF' }}>
+                      {sortOrder === 'asc' ? '↑ Tăng dần' : '↓ Giảm dần'}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+
+                <View style={styles.resultMetaRow}>
+                  <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                    Hiển thị {filtered.length}/{lecturers.length} GV
+                  </ThemedText>
+                  {hasActiveFilter && (
                     <Pressable
-                      key={option.key}
                       accessibilityRole="button"
-                      onPress={() => setSortKey(option.key)}
-                      style={[
-                        styles.sortChip,
-                        {
-                          backgroundColor: active ? '#208AEF' : theme.backgroundElement,
-                        },
+                      onPress={resetFilters}
+                      style={({ pressed }) => [
+                        styles.resetButton,
+                        { opacity: pressed ? 0.7 : 1 },
                       ]}>
-                      <ThemedText
-                        type="small"
-                        style={{ color: active ? '#ffffff' : theme.text }}>
-                        {option.label}
+                      <ThemedText type="smallBold" style={{ color: '#D64545' }}>
+                        Xoá bộ lọc
                       </ThemedText>
                     </Pressable>
-                  );
-                })}
+                  )}
+                </View>
               </View>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push('/form')}
-                style={({ pressed }) => [
-                  styles.addButton,
-                  { backgroundColor: '#208AEF', opacity: pressed ? 0.85 : 1 },
-                ]}>
-                <ThemedText type="smallBold" style={styles.addButtonText}>
-                  + Thêm giảng viên
-                </ThemedText>
-              </Pressable>
             </View>
 
-            {/* Trạng thái */}
+            {/* Trạng thái & Danh sách */}
             {error !== null && <ErrorText message={`Không tải được dữ liệu: ${error}`} />}
             {actionError !== null && <ErrorText message={actionError} />}
             {loading ? (
@@ -188,15 +288,18 @@ export default function DashboardScreen() {
             ) : filtered.length === 0 ? (
               <ThemedView type="backgroundElement" style={styles.empty}>
                 <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                  {search === ''
+                  {lecturers.length === 0
                     ? 'Chưa có giảng viên nào. Nhấn “Thêm giảng viên” để bắt đầu.'
-                    : 'Không tìm thấy giảng viên phù hợp.'}
+                    : 'Không tìm thấy giảng viên phù hợp với bộ lọc hiện tại.'}
                 </ThemedText>
               </ThemedView>
             ) : isWide ? (
               <LecturerTable
                 lecturers={filtered}
                 theme={theme}
+                sortKey={sortKey}
+                sortOrder={sortOrder}
+                onSort={handleSelectSort}
                 onOpen={setDetail}
                 onEdit={openEdit}
                 onDelete={setPendingDelete}
@@ -293,31 +396,65 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 function LecturerTable({
   lecturers,
   theme,
+  sortKey,
+  sortOrder,
+  onSort,
   onOpen,
   onEdit,
   onDelete,
 }: {
   lecturers: GiangVien[];
   theme: ReturnType<typeof useTheme>;
+  sortKey: SortKey;
+  sortOrder: SortOrder;
+  onSort: (key: SortKey) => void;
   onOpen: (gv: GiangVien) => void;
   onEdit: (gv: GiangVien) => void;
   onDelete: (gv: GiangVien) => void;
 }) {
+  function sortIndicator(column: SortKey): string {
+    if (sortKey !== column) {
+      return ' ↕';
+    }
+    return sortOrder === 'asc' ? ' ↑' : ' ↓';
+  }
+
   return (
     <View style={[styles.tableCard, { borderColor: theme.backgroundElement }]}>
       <View style={[styles.tableRow, styles.tableHeaderRow]}>
-        <ThemedText type="smallBold" style={styles.cellId}>
-          Mã GV
-        </ThemedText>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onSort('idgv')}
+          style={styles.cellId}>
+          <ThemedText
+            type="smallBold"
+            style={sortKey === 'idgv' ? styles.activeSortHeader : undefined}>
+            Mã GV{sortIndicator('idgv')}
+          </ThemedText>
+        </Pressable>
         <ThemedText type="smallBold" style={styles.cellAvatar}>
           Ảnh
         </ThemedText>
-        <ThemedText type="smallBold" style={styles.cellName}>
-          Họ tên
-        </ThemedText>
-        <ThemedText type="smallBold" style={styles.cellSum}>
-          Tổng số lớp
-        </ThemedText>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onSort('fullname')}
+          style={styles.cellName}>
+          <ThemedText
+            type="smallBold"
+            style={sortKey === 'fullname' ? styles.activeSortHeader : undefined}>
+            Họ tên{sortIndicator('fullname')}
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onSort('sumclass')}
+          style={styles.cellSum}>
+          <ThemedText
+            type="smallBold"
+            style={sortKey === 'sumclass' ? styles.activeSortHeader : undefined}>
+            Tổng số lớp{sortIndicator('sumclass')}
+          </ThemedText>
+        </Pressable>
         <ThemedText type="smallBold" style={styles.cellActions}>
           Hành động
         </ThemedText>
@@ -429,46 +566,27 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 960,
   },
-  statsRow: {
-    flexDirection: 'row',
-    gap: Spacing.three,
-  },
-  statCard: {
-    flex: 1,
+  filterPanel: {
     borderRadius: Spacing.three,
+    borderWidth: 1,
     padding: Spacing.three,
-    gap: Spacing.half,
-  },
-  statValue: {
-    fontSize: 28,
-    lineHeight: 34,
-  },
-  toolbar: {
     gap: Spacing.two,
   },
-  toolbarWide: {
+  topBarRow: {
+    gap: Spacing.two,
+  },
+  topBarRowWide: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
   },
   searchInput: {
     flexGrow: 1,
     minWidth: 220,
+    borderWidth: 1,
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two + 2,
     fontSize: 15,
-  },
-  sortRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    flexWrap: 'wrap',
-  },
-  sortChip: {
-    borderRadius: Spacing.six,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two - 2,
   },
   addButton: {
     borderRadius: Spacing.two,
@@ -480,6 +598,44 @@ const styles = StyleSheet.create({
   },
   addButtonText: {
     color: '#ffffff',
+  },
+  chipGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: Spacing.one + 2,
+  },
+  groupLabel: {
+    marginRight: Spacing.half,
+  },
+  chip: {
+    borderWidth: 1,
+    borderRadius: Spacing.six,
+    paddingHorizontal: Spacing.two + 4,
+    paddingVertical: Spacing.one,
+  },
+  dividerDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(128, 128, 128, 0.45)',
+    marginHorizontal: Spacing.one,
+  },
+  sortAndResultRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  resultMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  resetButton: {
+    paddingVertical: Spacing.half,
+    paddingHorizontal: Spacing.one,
   },
   loading: {
     marginTop: Spacing.four,
@@ -508,6 +664,9 @@ const styles = StyleSheet.create({
   tableHeaderRow: {
     borderTopWidth: 0,
   },
+  activeSortHeader: {
+    color: '#208AEF',
+  },
   tableRowMain: {
     flex: 1,
     flexDirection: 'row',
@@ -515,7 +674,7 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   cellId: {
-    width: 90,
+    width: 96,
   },
   cellAvatar: {
     width: 48,
@@ -524,7 +683,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cellSum: {
-    width: 90,
+    width: 112,
   },
   cellActions: {
     width: 130,

@@ -11,8 +11,10 @@
 ## Tính năng
 
 - Đăng nhập admin bằng Firebase Authentication, tự chặn vào khu vực admin khi chưa đăng nhập
-- Danh sách giảng viên cập nhật realtime, tìm kiếm theo họ tên / mã GV, sắp xếp theo họ tên hoặc số lớp, 2 số liệu tổng quan (số giảng viên, tổng số lớp)
-- Giao diện responsive: bảng khi màn hình rộng (web), thẻ khi màn hẹp (mobile)
+- Bảng điều khiển thống kê nâng cao (Tổng số GV, Tổng số lớp, Trung bình lớp/GV, Giảng viên dạy nhiều/ít lớp nhất, tỷ lệ cập nhật ảnh)
+- Biểu đồ thanh ngang trực quan so sánh số lớp (`SumClass`) của từng giảng viên
+- Tìm kiếm theo họ tên / mã GV, lọc theo trạng thái có/chưa có ảnh, sắp xếp 2 chiều (`ASC`/`DESC`) theo Mã GV, Họ tên hoặc Số lớp
+- Giao diện responsive: bảng khi màn hình rộng (web, hỗ trợ nhấn tiêu đề cột để sắp xếp), thẻ khi màn hẹp (mobile)
 - Thêm / sửa / xoá giảng viên, xoá có dialog xác nhận; IDGV là document ID nên trùng mã bị chặn ngay khi thêm
 - Ảnh chọn từ thư viện máy, nén base64 lưu trực tiếp vào trường `Image` (dưới ~900KB/doc)
 - Ảnh hiển thị trên cả web và mobile, phiên đăng nhập được giữ giữa các lần mở app
